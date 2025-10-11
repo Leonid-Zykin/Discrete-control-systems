@@ -32,27 +32,13 @@ def zoh_double_integrator(T: float) -> DiscreteSS:
 
 
 def acker(A: np.ndarray, B: np.ndarray, desired_poles: np.ndarray) -> np.ndarray:
-    """Ackermann для дискретного случая (аналогичен непрерывному для размещения полюсов)."""
-    n = A.shape[0]
-    # Контролируемость
-    ctrb = B
-    for i in range(1, n):
-        ctrb = np.hstack([ctrb, np.linalg.matrix_power(A, i) @ B])
-    if np.linalg.matrix_rank(ctrb) < n:
-        raise ValueError("Система неконтролируема")
-    # Желаемый полином
-    poly = np.poly(desired_poles)  # z^n + a1 z^{n-1} + ... + an
-    # Построение желаемого матричного полинома
-    Ak = np.zeros_like(A)
-    M = np.eye(n)
-    for i in range(n):
-        Ak = Ak + poly[n - i] * M  # коэффициенты начиная с z^{n-1}
-        M = M @ A
-    # Вектор e_n^T = [0 ... 0 1]
-    eT = np.zeros((1, n))
-    eT[0, -1] = 1.0
-    K = eT @ np.linalg.inv(ctrb) @ Ak
-    return np.asarray(K).reshape(1, -1)
+    """Правильное размещение полюсов используя scipy.signal.place_poles."""
+    from scipy.signal import place_poles
+    
+    # Используем готовую функцию из scipy
+    result = place_poles(A, B, desired_poles)
+    K = result.gain_matrix
+    return K
 
 
 def simulate_regulator(A: np.ndarray, B: np.ndarray, K: np.ndarray, x0: np.ndarray, N: int = 200):
@@ -85,7 +71,19 @@ def run_case(idx: int, poles):
     K = acker(sys.A, sys.B, poles)
     N = 200
     t = np.arange(N+1) * T
-    x0 = np.array([1.0, 0.0])  # y(0)=1, dy(0)=0
+    
+    # Разные начальные условия для разных наборов
+    if idx == 1:  # (0.8, 0.2) - апериодический
+        x0 = np.array([1.0, 0.0])  # y(0)=1, dy(0)=0
+    elif idx == 2:  # (1.0, -0.3) - нейтральная устойчивость
+        x0 = np.array([0.0, 1.0])  # y(0)=0, dy(0)=1 - для демонстрации линейного роста
+    elif idx == 3:  # (0.6, -0.3) - с колебательностью
+        x0 = np.array([1.0, 0.0])  # y(0)=1, dy(0)=0
+    elif idx == 4:  # (0.7j, -0.7j) - колебательный
+        x0 = np.array([1.0, 0.0])  # y(0)=1, dy(0)=0
+    else:  # idx == 5, (-0.3+0.8j, -0.3-0.8j) - затухающие колебания
+        x0 = np.array([1.0, 0.0])  # y(0)=1, dy(0)=0
+    
     X = simulate_regulator(sys.A, sys.B, K, x0, N)
     y = X[:, 0]
     title = f'Набор {idx}: полюса {poles}, K={K.ravel()}'
@@ -94,14 +92,13 @@ def run_case(idx: int, poles):
 
 
 def main():
-    # Пять наборов желаемых собственных чисел для варианта 8 (из таблицы 2)
-    # Исправлены для более разнообразной динамики
+    # Пять наборов желаемых собственных чисел для варианта 8 (из таблицы)
     pole_sets = [
-        (0.5, 0.1),                     # 1 - быстрый апериодический
-        (0.9, 0.8),                     # 2 - медленный апериодический  
-        (0.3, -0.2),                    # 3 - быстрый с небольшой колебательностью
-        (0.0+0.7j, 0.0-0.7j),           # 4 - чисто колебательный
-        (-0.3+0.8j, -0.3-0.8j)          # 5 - колебательный с затуханием
+        (0.8, 0.2),                     # 1
+        (1.0, -0.3),                    # 2
+        (0.6, -0.3),                    # 3
+        (0.0+0.7j, 0.0-0.7j),           # 4
+        (-0.3+0.8j, -0.3-0.8j)          # 5
     ]
     for i, poles in enumerate(pole_sets, start=1):
         try:
