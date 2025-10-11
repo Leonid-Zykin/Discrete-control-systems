@@ -99,8 +99,8 @@ def main():
         save_step_plot(res, f'Граница устойчивости: {name}, K_FB={kfb:.3f}',
                        f'step_boundary_{"neutral" if name=="neutral_pos" else "osc"}')
 
-    # Без колебаний (быстрое апериодическое): выберем a в (0,1) например a=0.5
-    a = 0.5
+    # Без колебаний (апериодическое): выберем a=0.3 для более выраженного затухания
+    a = 0.3
     K_no_osc = (1 - a) / (T * K_CO)
     res_no = simulate_closed_loop(K_no_osc, t_end=10.0)
     save_step_plot(res_no, f'Без колебаний, K_FB={K_no_osc:.3f}', 'step_no_osc')
