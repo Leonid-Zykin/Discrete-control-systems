@@ -68,7 +68,8 @@ def simulate_regulator(A: np.ndarray, B: np.ndarray, K: np.ndarray, x0: np.ndarr
 
 def save_plot(t: np.ndarray, y: np.ndarray, title: str, fname: str):
     plt.figure(figsize=(8, 4))
-    plt.plot(t, y)
+    # Ступенчатая функция (ZOH) - корректно для дискретных систем
+    plt.step(t, y, where='post', linewidth=2)
     plt.grid(True, alpha=0.3)
     plt.xlabel('t, c')
     plt.ylabel('y(k)')

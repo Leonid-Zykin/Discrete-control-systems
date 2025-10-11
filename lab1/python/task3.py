@@ -52,7 +52,8 @@ def simulate_ss(ss: SS, x0: np.ndarray, N: int):
 
 def save_plot(t, y, title, fname):
     plt.figure(figsize=(8, 3))
-    plt.plot(t, y)
+    # Ступенчатая функция (ZOH) - корректно для дискретных систем
+    plt.step(t, y, where='post', linewidth=2)
     plt.grid(True, alpha=0.3)
     plt.xlabel('t, c')
     plt.ylabel('g(k)')
@@ -62,7 +63,7 @@ def save_plot(t, y, title, fname):
     plt.close()
 
 
-def disturbance_model(T: float) -> SS:
+def disturbance_model(T_dist: float) -> SS:
     """Модель возмущения варианта 8 из Табл.4: 4 sin(2 k T) + 1.5 cos(2.5 k T).
     Представим суммой двух осцилляторов (без входа):
       y1=A1*sin(k*2T) -> θ1=2T, выход [0 A1] x1
@@ -96,11 +97,14 @@ def main():
     X, Y = simulate_ss(gen, x0, N)
     save_plot(t, Y, f'g(k)= {A} sin(k T ω), T={T}, ω={omega}', 'gen_harmonic')
 
-    # Модель возмущения
-    dist = disturbance_model(T)
+    # Модель возмущения (T = 0.25 с согласно заданию 3d)
+    T_dist = 0.25
+    dist = disturbance_model(T_dist)
+    N_dist = 200  # фиксированное количество точек
+    t_dist = np.arange(N_dist+1) * T_dist
     x0d = np.array([1.0, 0.0, 1.0, 0.0])  # стартовые фазы
-    Xd, Yd = simulate_ss(dist, x0d, N)
-    save_plot(t, Yd, 'Возмущение: 4 sin(2kT) + 1.5 cos(2.5kT)', 'disturbance')
+    Xd, Yd = simulate_ss(dist, x0d, N_dist)
+    save_plot(t_dist, Yd, f'Возмущение: 4 sin(2kT) + 1.5 cos(2.5kT), T={T_dist}', 'disturbance')
 
 
 if __name__ == '__main__':

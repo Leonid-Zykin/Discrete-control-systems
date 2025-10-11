@@ -38,7 +38,8 @@ def simulate_closed_loop(K_fb: float, t_end: float = 10.0) -> StepResponseResult
         y = x
         u = r - K_fb * y
         # интегратор с коэффициентом K_CO и ZOH (u постоянен в интервале)
-        x = x + T * (K_CO * u)
+        if k < n_steps - 1:  # не обновляем на последнем шаге
+            x = x + T * (K_CO * u)
         y_hist[k] = y
         u_hist[k] = u
 
@@ -47,8 +48,9 @@ def simulate_closed_loop(K_fb: float, t_end: float = 10.0) -> StepResponseResult
 
 def save_step_plot(res: StepResponseResult, title: str, fname: str) -> None:
     plt.figure(figsize=(8, 4))
-    plt.plot(res.t, res.y, label='y(k)')
-    plt.step(res.t, np.ones_like(res.t), where='post', label='r(k)=1', linestyle='--')
+    # Ступенчатая функция (ZOH) - более корректно для дискретных систем
+    plt.step(res.t, res.y, where='post', label='y(k)', linewidth=2)
+    plt.step(res.t, np.ones_like(res.t), where='post', label='r(k)=1', linestyle='--', alpha=0.7)
     plt.grid(True, alpha=0.3)
     plt.xlabel('t, c')
     plt.ylabel('Амплитуда')
