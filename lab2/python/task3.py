@@ -9,11 +9,13 @@ LAB_DIR = THIS_FILE.parent.parent
 IMG_DIR = LAB_DIR / 'images' / 'task3'
 IMG_DIR.mkdir(parents=True, exist_ok=True)
 
-# Параметры варианта 8 (объект из задания 1)
+# Параметры варианта 8
 k1 = 3.20
 T = 0.75
+A_g = 2.06
+omega = 7.0
 
-# Непрерывная модель типа 4
+# Непрерывная модель объекта типа 4
 A_c = np.array([[0.0, 0.0],
                 [k1,  0.0]])
 B_c = np.array([[1.0],
@@ -24,69 +26,174 @@ D = np.array([[0.0]])
 # Дискретизация
 Ad, Bd, Cd, Dd, _ = cont2discrete((A_c, B_c, C, D), T, method='zoh')
 
-# Стабилизирующая обратная связь K (корни в нуле)
-z_desired = np.array([0.0, 0.0])
-coeffs = np.poly(z_desired)  # [1,0,0]
-n = Ad.shape[0]
-pA = np.zeros_like(Ad)
+# Внутренняя модель гармоники (резонатор) - как в задании 2
+theta = omega * T
+Aosc = np.array([[0.0, 1.0],
+                 [-1.0, 2.0 * np.cos(theta)]])
+Bosc = np.array([[0.0],
+                 [1.0]])
+
+# Расширенная система z = [x; w]
+A_t = np.block([
+    [Ad,               np.zeros((Ad.shape[0], 2))],
+    [-Bosc @ C,        Aosc]
+])
+B_t = np.vstack([Bd, np.zeros((2, 1))])
+
+# Синтезируем следящий регулятор точно как в задании 2
+n = A_t.shape[0]
+z_desired = np.zeros(n)
+coeffs = np.poly(z_desired)
+pA = np.zeros_like(A_t)
 for i in range(n + 1):
     power = n - i
     if power == n:
-        pA = pA + np.linalg.matrix_power(Ad, n)
+        pA = pA + np.linalg.matrix_power(A_t, n)
     elif power >= 0:
-        pA = pA + coeffs[i] * np.linalg.matrix_power(Ad, power)
-W = np.hstack([Bd, Ad @ Bd])
+        pA = pA + coeffs[i] * np.linalg.matrix_power(A_t, power)
+
+W = np.hstack([B_t, A_t @ B_t, A_t @ A_t @ B_t, A_t @ A_t @ A_t @ B_t])
 enT = np.zeros((1, n)); enT[0, -1] = 1.0
-K = enT @ np.linalg.inv(W) @ pA
+K_full = enT @ np.linalg.inv(W) @ pA
 
-# Наблюдатель полного порядка: xhat+ = Ad xhat + Bd u + L (y - C xhat)
-Ad_T = Ad.T
-C_T = Cd.T
-W_o = np.hstack([C_T, Ad_T @ C_T])
-pA_o = np.zeros_like(Ad_T)
-for i in range(n + 1):
-    power = n - i
-    if power == n:
-        pA_o = pA_o + np.linalg.matrix_power(Ad_T, n)
+# Разделение на Kx и Kw
+Kx = K_full[0, :2]
+Kw = K_full[0, 2:]
+
+print(f"Следящий регулятор: Kx={Kx}, Kw={Kw}")
+
+# Наблюдатель полного порядка для объекта (deadbeat)
+W_o = np.hstack([C.T, Ad.T @ C.T])
+coeffs_obs = np.poly(np.zeros(2))  # deadbeat: [1,0,0]
+pA_o = np.zeros_like(Ad.T)
+for i in range(3):
+    power = 2 - i
+    if power == 2:
+        pA_o = pA_o + np.linalg.matrix_power(Ad.T, 2)
     elif power >= 0:
-        pA_o = pA_o + coeffs[i] * np.linalg.matrix_power(Ad_T, power)
-enT_o = np.zeros((1, n)); enT_o[0, -1] = 1.0
+        pA_o = pA_o + coeffs_obs[i] * np.linalg.matrix_power(Ad.T, power)
+enT_o = np.zeros((1, 2)); enT_o[0, -1] = 1.0
 L_T = enT_o @ np.linalg.inv(W_o) @ pA_o
-L = L_T.T  # shape (2,1)
+L = L_T.T
 
-# Моделирование
-N = 100
-x = np.array([1.0, 0.0])
-xhat = np.zeros(2)
-u_hist, y_hist, yhat_hist, err_norm = [], [], [], []
-for _ in range(N):
-    u = float(-(K @ xhat))
-    x = (Ad @ x) + (Bd.flatten() * u)
+print(f"Наблюдатель: L={L.flatten()}")
+
+# Моделирование замкнутой системы с наблюдателем
+# Используем тот же регулятор из задания 2, но x заменяем на xhat
+N = 200
+x = np.array([1.0, 0.0])  # начальное состояние объекта
+xhat = np.zeros(2)         # оценка состояния объекта
+w = np.zeros(2)            # состояние внутренней модели
+
+# История переменных
+x1_hist, x2_hist = [], []
+xhat1_hist, xhat2_hist = [], []
+w1_hist, w2_hist = [], []
+err_norm_hist = []
+y_hist = []
+u_hist = []
+e_hist = []
+r_hist = []
+
+for k in range(N):
+    # Гармоническое задание
+    r = A_g * np.sin(omega * k * T)
+    
+    # Измерение выхода
     y = float(C @ x)
+    
+    # Ошибка слежения
+    e = r - y
+    
+    # Обновление внутренней модели
+    w = Aosc @ w + Bosc.flatten() * e
+    
+    # Управление с наблюдателем: u = -Kx*xhat - Kw*w
+    u = float(-Kx @ xhat - Kw @ w)
+    
+    # Обновление объекта
+    x = Ad @ x + Bd.flatten() * u
+    
+    # Обновление наблюдателя
     innovation = y - float(C @ xhat)
-    xhat = (Ad @ xhat) + (Bd.flatten() * u) + (L.flatten() * innovation)
-    yhat = float(C @ xhat)
-    u_hist.append(u)
+    xhat = Ad @ xhat + Bd.flatten() * u + L.flatten() * innovation
+    
+    # Сохранение истории
+    x1_hist.append(x[0])
+    x2_hist.append(x[1])
+    xhat1_hist.append(xhat[0])
+    xhat2_hist.append(xhat[1])
+    w1_hist.append(w[0])
+    w2_hist.append(w[1])
+    err_norm_hist.append(np.linalg.norm(x - xhat))
     y_hist.append(y)
-    yhat_hist.append(yhat)
-    err_norm.append(np.linalg.norm(x - xhat))
+    u_hist.append(u)
+    e_hist.append(e)
+    r_hist.append(r)
 
+# Построение графиков
 t = np.arange(N) * T
-plt.figure(figsize=(9, 5))
-plt.subplot(2, 1, 1)
-plt.plot(t, y_hist, label='y')
-plt.plot(t, yhat_hist, '--', label='ŷ')
-plt.ylabel('Выход')
+plt.figure(figsize=(12, 10))
+
+# График 1: Состояние объекта и наблюдателя
+plt.subplot(3, 2, 1)
+plt.plot(t, x1_hist, 'b-', label='x₁ (объект)')
+plt.plot(t, xhat1_hist, 'r--', label='x̂₁ (наблюдатель)')
+plt.ylabel('x₁')
 plt.grid(True)
 plt.legend()
-plt.subplot(2, 1, 2)
-plt.plot(t, err_norm, label='||x - x̂||')
+plt.title('Переменная состояния x₁')
+
+plt.subplot(3, 2, 2)
+plt.plot(t, x2_hist, 'b-', label='x₂ (объект)')
+plt.plot(t, xhat2_hist, 'r--', label='x̂₂ (наблюдатель)')
+plt.ylabel('x₂')
+plt.grid(True)
+plt.legend()
+plt.title('Переменная состояния x₂')
+
+# График 2: Выход и задание
+plt.subplot(3, 2, 3)
+plt.plot(t, r_hist, 'r--', label='g(k)')
+plt.plot(t, y_hist, 'b-', label='y(k)')
+plt.ylabel('Амплитуда')
+plt.grid(True)
+plt.legend()
+plt.title('Выход и задание')
+
+# График 3: Состояние внутренней модели
+plt.subplot(3, 2, 4)
+plt.plot(t, w1_hist, 'g-', label='w₁')
+plt.plot(t, w2_hist, 'm-', label='w₂')
+plt.ylabel('Состояние')
+plt.grid(True)
+plt.legend()
+plt.title('Состояние внутренней модели')
+
+# График 4: Невязка наблюдателя
+plt.subplot(3, 2, 5)
+plt.plot(t, err_norm_hist, 'm-', label='||x - x̂||')
 plt.xlabel('t, s')
-plt.ylabel('Ошибка состояния')
+plt.ylabel('Невязка')
 plt.grid(True)
 plt.legend()
+plt.title('Невязка наблюдателя')
+
+# График 5: Ошибка слежения
+plt.subplot(3, 2, 6)
+plt.plot(t, e_hist, 'r-', label='e(k) = g(k) - y(k)')
+plt.xlabel('t, s')
+plt.ylabel('Ошибка')
+plt.grid(True)
+plt.legend()
+plt.title('Ошибка слежения')
+
 plt.tight_layout()
 plt.savefig(IMG_DIR / 'observer_states.png', dpi=150)
 plt.close()
 
 print('График сохранен:', IMG_DIR / 'observer_states.png')
+print(f'Максимальная ошибка слежения: {max(abs(e) for e in e_hist):.6f}')
+print(f'Ошибка в конце: {abs(e_hist[-1]):.6f}')
+print(f'Максимальная невязка наблюдателя: {max(err_norm_hist):.6f}')
+print(f'Невязка в конце: {err_norm_hist[-1]:.6f}')
