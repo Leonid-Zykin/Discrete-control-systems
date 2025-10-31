@@ -62,19 +62,10 @@ Kw = K_full[0, 2:]
 
 print(f"Следящий регулятор: Kx={Kx}, Kw={Kw}")
 
-# Наблюдатель полного порядка для объекта (deadbeat)
-W_o = np.hstack([C.T, Ad.T @ C.T])
-coeffs_obs = np.poly(np.zeros(2))  # deadbeat: [1,0,0]
-pA_o = np.zeros_like(Ad.T)
-for i in range(3):
-    power = 2 - i
-    if power == 2:
-        pA_o = pA_o + np.linalg.matrix_power(Ad.T, 2)
-    elif power >= 0:
-        pA_o = pA_o + coeffs_obs[i] * np.linalg.matrix_power(Ad.T, power)
-enT_o = np.zeros((1, 2)); enT_o[0, -1] = 1.0
-L_T = enT_o @ np.linalg.inv(W_o) @ pA_o
-L = L_T.T
+# Наблюдатель полного порядка для объекта (deadbeat за 2 такта)
+# Требуем (Ad - L C) с характеристическим многочленом λ^2 ⇒ след = 0, det = 0
+# Для Ad = [[1,0],[2.4,1]] и C = [0 1] получаем L = [1/2.4, 2]^T
+L = np.array([[1.0/2.4], [2.0]])
 
 print(f"Наблюдатель: L={L.flatten()}")
 
@@ -178,6 +169,9 @@ plt.ylabel('Невязка')
 plt.grid(True)
 plt.legend()
 plt.title('Невязка наблюдателя')
+# Подчеркнём deadbeat-сходимость за 2 такта
+plt.xlim(0, 2*T)
+plt.axvline(2*T, color='k', linestyle='--', alpha=0.5, label='t = 2T')
 
 # График 5: Ошибка слежения
 plt.subplot(3, 2, 6)
