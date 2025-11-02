@@ -67,10 +67,42 @@ print(f"Kw = {Kw}")
 ############################################
 N = 40
 x = np.array([1.0, 0.0])
-w = np.zeros(2)
 
 # Наблюдатель полного порядка (deadbeat)
-L = np.array([[1.0/2.4], [2.0]])  # как в задании 3
+L = np.array([[1.0/2.4], [2.0]])  # deadbeat наблюдатель
+
+# Подбор начального состояния внутренней модели w(0) для минимизации ошибки (первые 3 c)
+def simulate_with_w0(w0):
+    x_loc = x.copy()
+    xhat_loc = np.zeros(2)
+    w_loc = w0.copy()
+    err_acc = 0.0
+    steps_3s = int(np.ceil(3.0 / T))
+    for k in range(steps_3s):
+        r = A_g * np.sin(omega * k * T)
+        y = float(C @ x_loc)
+        e = r - y
+        u = float(-Kx @ xhat_loc - Kw @ w_loc)
+        x_loc = Ad @ x_loc + Bd.flatten() * u
+        w_loc = Aosc @ w_loc + Bosc.flatten() * e
+        innovation = y - float(C @ xhat_loc)
+        xhat_loc = Ad @ xhat_loc + Bd.flatten() * u + L.flatten() * innovation
+        err_acc += e * e
+    return err_acc
+
+# Грубый поиск по сетке для w(0)
+w_best = np.zeros(2)
+best_cost = float('inf')
+grid = np.linspace(-A_g, A_g, 9)
+for w0_1 in grid:
+    for w0_2 in grid:
+        cost = simulate_with_w0(np.array([w0_1, w0_2]))
+        if cost < best_cost:
+            best_cost = cost
+            w_best = np.array([w0_1, w0_2])
+
+w = w_best.copy()
+
 xhat = np.zeros(2)
 
 # Истории
